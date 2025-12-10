@@ -12,11 +12,11 @@ MONGO_URI = os.getenv("MONGO_URI")
 # Create async MongoDB client
 client = AsyncIOMotorClient(
     MONGO_URI,
-    tls=True,
-    tlsCAFile=certifi.where(),
+    tls=False,   # Disable SSL for local MongoDB
     connectTimeoutMS=30000,
     serverSelectionTimeoutMS=30000
 )
+
 
 # Access the database and collections
 db = client["evaluno_db"]

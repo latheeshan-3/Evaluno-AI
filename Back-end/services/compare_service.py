@@ -1,14 +1,18 @@
+import os
 from langchain_groq import ChatGroq
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 import json
 from typing import List
 from schemas.compare import CVScore
 import re
+import os
 
 class CVComparator:
     def __init__(self):
         self.chain = self._create_chain()
+    print("DEBUG GROQ KEY:", os.getenv("GROQ_API_KEY"))
+
 
     def _create_chain(self):
         prompt = ChatPromptTemplate.from_messages([

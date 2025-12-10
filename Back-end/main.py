@@ -6,12 +6,14 @@ from database.connection import get_db, client
 from pymongo.errors import ConnectionFailure
 from routes import compareRoute
 from routes import interview_question_type
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.js frontend
+    allow_origins=["*"],  # Next.js frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

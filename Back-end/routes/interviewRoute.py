@@ -106,29 +106,29 @@ from schemas.interview import InterviewQnAResponse
 from services.llm import chain
 from database.connection import cv_results
 import json
-import fitz  # PyMuPDF
+import fitz
 import docx
 import io
+import re
 import traceback
 
 router = APIRouter(prefix="/interview", tags=["interview"])
 
-# ---------- Utility Functions ----------
+
+# ---- Utility Functions ----
 
 def extract_text_from_pdf_bytes(file_bytes: bytes) -> str:
-    """Extract text from a PDF file given its byte content."""
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         text = ""
         for page in doc:
-            text += page.get_textpage().extractText()
+            text += str(page.get_text())  # Modern PyMuPDF extraction
         return text
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF parse error: {e}")
 
 
 def extract_text_from_docx_bytes(file_bytes: bytes) -> str:
-    """Extract text from a DOCX file given its byte content."""
     try:
         file_stream = io.BytesIO(file_bytes)
         document = docx.Document(file_stream)
@@ -136,14 +136,14 @@ def extract_text_from_docx_bytes(file_bytes: bytes) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DOCX parse error: {e}")
 
-def strip_json_fence(response: str) -> str:
-    """Strip markdown-style triple backticks and 'json' tag from a response."""
-    response = response.strip()
-    if response.startswith("```"):
-        response = response.strip("`").replace("json", "", 1).strip()
-    return response
 
-# ---------- API Endpoint ----------
+def strip_json_fence(text: str) -> str:
+    """Remove ```json ... ``` or ``` ... ``` fences."""
+    cleaned = re.sub(r"```(?:json)?(.*?)```", r"\1", text, flags=re.DOTALL)
+    return cleaned.strip()
+
+
+# ---- API Endpoint ----
 
 @router.post("/upload", response_model=InterviewQnAResponse)
 async def generate_from_uploaded_cv(
@@ -160,44 +160,38 @@ async def generate_from_uploaded_cv(
 
         file_bytes = await cv_file.read()
 
-        # Determine file type and extract text
+        # Extract text depending on file type
         if filename.lower().endswith(".pdf"):
             cv_text = extract_text_from_pdf_bytes(file_bytes)
         elif filename.lower().endswith(".docx"):
             cv_text = extract_text_from_docx_bytes(file_bytes)
         else:
-            raise HTTPException(status_code=400, detail="Unsupported file type. Only PDF and DOCX are supported.")
+            raise HTTPException(status_code=400, detail="Unsupported file type")
 
-        # Call the LLM chain
-        parsed_response = ""
+        # Call LLM
+        raw_response = await chain.ainvoke({
+            "cv_text": cv_text,
+            "job_title": job_title,
+            "job_requirements": job_requirements,
+            "job_description": job_description
+        })
+
+        cleaned = strip_json_fence(raw_response)
+
         try:
-            parsed_response = await chain.ainvoke({
-                "cv_text": cv_text,
-                "job_title": job_title,
-                "job_requirements": job_requirements,
-                "job_description": job_description
-            })
-
-            # Clean and parse JSON
-            cleaned_response = strip_json_fence(parsed_response)
-            items = json.loads(cleaned_response)
-
+            items = json.loads(cleaned)
         except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail=f"Invalid JSON from LLM: {parsed_response}")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"LLM processing error: {e}")
+            raise HTTPException(status_code=500, detail=f"Invalid JSON from LLM: {raw_response}")
 
-        # Insert into the database
-        try:
-            await cv_results.insert_one({
-                "user_id": user_id,
-                "AIResponse": items
-            })
-        except Exception as db_error:
-            raise HTTPException(status_code=500, detail=f"Database error: {db_error}")
+        # Save to DB
+        await cv_results.insert_one({
+            "user_id": user_id,
+            "AIResponse": items
+        })
 
         return {"items": items}
 
     except Exception as e:
         print("Error in /interview/upload:", traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
+

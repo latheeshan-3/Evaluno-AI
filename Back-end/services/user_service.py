@@ -1,35 +1,51 @@
-# Add this at the VERY TOP of user_service.py (before other imports)
+# --------------------------- user_service.py ---------------------------
 import bcrypt
-bcrypt.__about__ = type('obj', (), {'__version__': '4.3.0'})  # Manually add missing attribute
+bcrypt.__about__ = type('obj', (), {'__version__': '4.3.0'})  # workaround
 
-# Now import passlib
+from passlib.hash import bcrypt as passlib_bcrypt
+from datetime import datetime, timedelta
+from fastapi import HTTPException
+from database.connection import get_db
+from schemas.user import UserCreate, UserLogin
+from utils.helpers import create_access_token
+
+db = get_db()
+users_collection = db["users"]
+
+# --------------------------- Password helpers ---------------------------
 from passlib.context import CryptContext
 
-from datetime import datetime, timedelta
-from typing import Optional
-from jose import JWTError, jwt
-from fastapi import HTTPException, status
-
-from database.connection import get_db, user_collection  # merged both imports
-from schemas.user import UserCreate, UserInDB, UserResponse, UserLogin
-from utils.helpers import hash_password, verify_password, create_access_token
-from bson import ObjectId
-import secrets
-
-# Replace the existing pwd_context line with:
+# Force modern bcrypt variant
 pwd_context = CryptContext(
-    schemes=["bcrypt"], 
-    bcrypt__ident="2b",  # Force modern bcrypt variant
-    bcrypt__rounds=12,   # Standard number of rounds
+    schemes=["bcrypt"],
+    bcrypt__ident="2b",
+    bcrypt__rounds=12,
     deprecated="auto"
 )
 
-db = get_db()
-users_collection = db["users"]  # to use in functions
+def truncate_password(password: str, max_bytes: int = 72) -> str:
+    """Truncate string so that its UTF-8 encoding is at most max_bytes."""
+    encoded = password.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return password
+    # truncate safely without breaking multibyte chars
+    truncated = encoded[:max_bytes]
+    while True:
+        try:
+            return truncated.decode("utf-8")
+        except UnicodeDecodeError:
+            truncated = truncated[:-1]
 
-# Async functions
+def hash_password(password: str) -> str:
+    safe_password = truncate_password(password)
+    return pwd_context.hash(safe_password)
 
-async def create_user(user: UserCreate):
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    safe_password = truncate_password(plain_password)
+    return pwd_context.verify(safe_password, hashed_password)
+
+# --------------------------- Async functions ---------------------------
+async def create_user(user: UserCreate) -> str:
     existing = await users_collection.find_one({"email": user.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -40,17 +56,16 @@ async def create_user(user: UserCreate):
     result = await users_collection.insert_one(user_dict)
     return str(result.inserted_id)
 
-
-async def authenticate_user(data: UserLogin):
+async def authenticate_user(data: UserLogin) -> str:
     user = await users_collection.find_one({"email": data.email})
     if not user or not verify_password(data.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_access_token({
+    token_data = {
         "sub": user["email"],
-        "username": user["username"],
-        "user_type": user["user_type"],
-        "user_id": str(user["_id"])  
-    })
-
+        "username": user.get("username"),
+        "user_type": user.get("user_type"),
+        "user_id": str(user["_id"])
+    }
+    token = create_access_token(token_data)
     return token
