@@ -1,48 +1,39 @@
 # --------------------------- user_service.py ---------------------------
-import bcrypt
-bcrypt.__about__ = type('obj', (), {'__version__': '4.3.0'})  # workaround
-
-from passlib.hash import bcrypt as passlib_bcrypt
 from datetime import datetime, timedelta
 from fastapi import HTTPException
 from database.connection import get_db
 from schemas.user import UserCreate, UserLogin
 from utils.helpers import create_access_token
+import hashlib
+import secrets
 
 db = get_db()
 users_collection = db["users"]
 
 # --------------------------- Password helpers ---------------------------
-from passlib.context import CryptContext
-
-# Force modern bcrypt variant
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    bcrypt__ident="2b",
-    bcrypt__rounds=12,
-    deprecated="auto"
-)
-
-def truncate_password(password: str, max_bytes: int = 72) -> str:
-    """Truncate string so that its UTF-8 encoding is at most max_bytes."""
-    encoded = password.encode("utf-8")
-    if len(encoded) <= max_bytes:
-        return password
-    # truncate safely without breaking multibyte chars
-    truncated = encoded[:max_bytes]
-    while True:
-        try:
-            return truncated.decode("utf-8")
-        except UnicodeDecodeError:
-            truncated = truncated[:-1]
+# Simple and reliable password hashing without passlib issues
 
 def hash_password(password: str) -> str:
-    safe_password = truncate_password(password)
-    return pwd_context.hash(safe_password)
+    """Hash password using PBKDF2 with SHA256."""
+    # Generate a random salt
+    salt = secrets.token_bytes(32)
+    # Use PBKDF2 with 100,000 iterations
+    pwd_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
+    # Return salt + hash as a combined string (both hex-encoded)
+    return f"{salt.hex()}${pwd_hash.hex()}"
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    safe_password = truncate_password(plain_password)
-    return pwd_context.verify(safe_password, hashed_password)
+    """Verify password against stored hash."""
+    try:
+        salt_hex, pwd_hash_hex = hashed_password.split('$')
+        salt = bytes.fromhex(salt_hex)
+        stored_hash = bytes.fromhex(pwd_hash_hex)
+        # Recompute hash with the stored salt
+        computed_hash = hashlib.pbkdf2_hmac('sha256', plain_password.encode(), salt, 100000)
+        # Compare hashes (constant time comparison)
+        return secrets.compare_digest(computed_hash, stored_hash)
+    except (ValueError, AttributeError):
+        return False
 
 # --------------------------- Async functions ---------------------------
 async def create_user(user: UserCreate) -> str:
