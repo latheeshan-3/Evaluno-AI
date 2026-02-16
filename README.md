@@ -2,7 +2,7 @@
 
 Evaluno-AI is an intelligent platform designed for automated interview processing and evaluation. It leverages a modern tech stack including FastAPI for the backend, Next.js for the frontend, and Langchain for AI-driven capabilities.
 
-## 🚀 Getting Started
+##  Getting Started
 
 Follow these instructions to get a copy of the project up and running on your local machine.
 
@@ -13,7 +13,7 @@ Follow these instructions to get a copy of the project up and running on your lo
 - [MongoDB](https://www.mongodb.com/) (Local or Atlas)
 - An API Key for [Groq](https://console.groq.com/)
 
-### 🛠️ Installation & Setup
+###  Installation & Setup
 
 #### 1. Clone the repository
 
@@ -70,7 +70,7 @@ cd Evaluno-AI
    ```
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## 🏗️ Project Structure
+##  Project Structure
 
 ```text
 Evaluno-AI/
@@ -82,13 +82,14 @@ Evaluno-AI/
     └── app/          # Next.js Pages & Components
 ```
 
-## 🧰 Tech Stack
+##  Tech Stack
 
 - **Frontend**: Next.js, React, Three.js, Framer Motion, Tailwind CSS
 - **Backend**: FastAPI, Langchain, Pydantic
 - **Database**: MongoDB (Motor)
 - **AI/LLM**: Groq (via Langchain)
 
-## 📄 License
+##  License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
